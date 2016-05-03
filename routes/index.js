@@ -2,6 +2,7 @@
 var express = require('express');
 var router = express.Router();
 var tweetBank = require('../tweetBank');
+var Promise = require('bluebird');
 
 module.exports = function makeRouterWithSockets (io, client) {
 
@@ -12,23 +13,63 @@ module.exports = function makeRouterWithSockets (io, client) {
     //         return data.rows[0].name;
     //       });
     // }
+    function createUser(name) {
 
-    function createUser(name, content, res) {
+      var userCreate = new Promise (function(resolve, reject) {
+        client.query('INSERT INTO Users (name, pictureurl) VALUES ($1,$2)', [name, "http://lorempixel.com/48/48"], function (err, data) {
+          if (err) reject(err);
+          console.log('user created');
+          resolve('weeecrazy'); 
+        });
+      })
 
-      client.query('INSERT INTO Users (name, pic) VALUES ($1,$2)', [name, "http://lorempixel.com/48/48"], function (err, data) {
-        client.query('SELECT ID FROM users', function (err, data) {
-          var userid= data.rows.slice(-1).id;
+      return userCreate.then(function () {
+        return new Promise (function (resolve, reject) {
+          console.log('getting id');
+          client.query('SELECT ID FROM users', function (err, data) {
+            if (err) reject(err);
+            
+              var userid = data.rows.slice(-1)[0].id;
+              console.log('resolving userid', userid);
+              resolve(userid);            
+            
+          });          
+        })
+
+      }).catch(function (err) {
+        console.error(err);
+      })
+
+
+      // client.query('INSERT INTO Users (name, pic) VALUES ($1,$2)', [name, "http://lorempixel.com/48/48"], function (err, data) {
+      //   client.query('SELECT ID FROM users', function (err, data) {
+      //     var userid= data.rows.slice(-1).id;
           // body...
-          client.query('INSERT INTO Tweets (userId, content) VALUES ($1, $2)', [userid, content], function (err, data) {
+          // client.query('INSERT INTO Tweets (userId, content) VALUES ($1, $2)', [userid, content], function (err, data) {
       // if (err) throw err;
-      console.log(data);
-      io.sockets.emit('new_tweet', data);
-      res.redirect('/');
-        });
-        });
+      // console.log(data);
+      // io.sockets.emit('new_tweet', data);
+      // res.redirect('/');
+      //   });
+      //   });
 
-      });
-     
+      // });
+    }
+
+    var createTweet = function (userid, content) {
+      // body...
+      var tweetCreate = new Promise( function (resolve, reject) {
+        console.log('here is content', content);
+        console.log('here is the userid', userid);
+        client.query('INSERT INTO Tweets (userId, content) VALUES ($1, $2)', [userid, content], function (err, data) {
+          if (err) Promise.reject (err);
+          console.log('please show us the data here', data);
+          io.sockets.emit('new_tweet', data);
+          return Promise.resolve()
+        });
+      })
+      
+       
     }
 
   // a reusable function
@@ -91,46 +132,52 @@ module.exports = function makeRouterWithSockets (io, client) {
 
   // create a new tweet
   router.post('/tweets', function(req, res, next){
-    console.log(req.body);
+    console.log("Tweet posted for creation");
     var name = req.body.name;
-    client.query('SELECT id FROM users WHERE name=$1', [name], function(err, data) {
-      // if () throw err; 
-      // if ()
-      console.log(data);
-      var content = req.body.text; 
-      if(data.rows[0]){
-        var userid = data.rows[0].id;
-        
-      }else{
-        client.query('SELECT ID FROM users', function (err, data) {
-          console.log(data.rows);
-          var userid= createUser(name, content,res);
-          console.log(userid)
+    var content = req.body.text; 
+    var existingUser = new Promise (function(resolve, reject) {
+      console.log("checking for existing user")
+       client.query('SELECT id FROM users WHERE name=$1', [name], function(err, data){
+          if (err) return Promise.reject(err);
+          console.log("done the check")
+          return resolve(data);
+       })
 
-      
-      // res.send('done');
-
-        // });  
-    });
-          
-       
-
-      }
-
-    
-
-    });
+    })
+    existingUser.then( function (data) {
+      console.log("processing the user") 
+      var userid;
+      if (data.rows[0]){
+        console.log(name,"already exists");
+        userid =data.rows[0].id; //userid
+      } else {
+          console.log(name, "does not exist, creating with promises:");
+          userid = createUser(name); //userid
+        }
+      // userid = data.rows[0].id||createUser(name);
 
 
-'INSERT INTO Users (name, pic) VALUES ("Oprah Winfrey","http://lorempixel.com/48/48")'
+        console.log("userid determined:", userid);
 
+        return userid;
 
+    }).then(function (userid){
+      console.log("adding tweet for userid", userid);
+      return Promise.resolve(createTweet(userid,content));
+    })
+      .then(function(){
+            // console.log('userid in post', userid)
+            console.log("(user and) tweet created")
+            // res.send('done');
+            res.redirect('/');
+       }).catch(function (error) {
+         // body...
+         console.log("oopsies:", error);
+       });
   });
-
   // // replaced this hard-coded route with general static routing in app.js
   // router.get('/stylesheets/style.css', function(req, res, next){
   //   res.sendFile('/stylesheets/style.css', { root: __dirname + '/../public/' });
   // });
-
   return router;
 }
