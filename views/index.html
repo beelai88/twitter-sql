@@ -22,7 +22,7 @@
         </form>
       {% endif %}
     </div>
-    <div class="col-md-9">
+    <div class="col-md-7">
 
       <!-- display tweets here -->
       <div id="tweets">
@@ -37,6 +37,14 @@
       {% endfor %}
       </div>
 
+    </div>
+
+    <div class="col-md-2">
+      <div id="otherButtons">
+        {% if showDelete%}
+          <button type="button" class="btn btn-danger" id="deleteButton">DELETE</button>
+        {% endif %}
+      </div>
     </div>
   </div>
 
